@@ -1,102 +1,210 @@
-/**
- * Welcome to the Looker Custom Visualization Builder! Please refer to the following resources 
- * to help you write your visualization:
- *  - API Documentation - https://github.com/looker/custom_visualizations_v2/blob/master/docs/api_reference.md
- *  - Example Visualizations - https://github.com/looker/custom_visualizations_v2/tree/master/src/examples
- *  - How to use the CVB - https://developers.looker.com/marketplace/tutorials/about-custom-viz-builder
- **/
-
-const visObject = {
- /**
-  * Configuration options for your visualization. In Looker, these show up in the vis editor
-  * panel but here, you can just manually set your default values in the code.
-  **/
+looker.plugins.visualizations.add({
+  id: "treemap",
+  label: "Treemap",
   options: {
-    first_option: {
-    	type: "string",
-      label: "My First Option",
-      default: "Default Value"
-    },
-    second_option: {
-    	type: "number",
-      label: "My Second Option",
-      default: 42
+    color_range: {
+      type: "array",
+      label: "Color Range",
+      display: "colors",
+      default: ["#dd3333", "#80ce5d", "#f78131", "#369dc1", "#c572d3", "#36c1b3", "#b57052", "#ed69af"]
     }
   },
- 
- /**
-  * The create function gets called when the visualization is mounted but before any
-  * data is passed to it.
-  **/
-	create: function(element, config){
-		element.innerHTML = "<h1>Ready to render!</h1>";
-	},
+  create: function(element, config) {
+    console.log("Create function called");
+    this.svg = d3.select(element).append("svg");
+    console.log("SVG created");
+  },
+  update: function(data, element, config, queryResponse) {
+    console.log("Update function called");
+    console.log("Data:", data);
+    console.log("Config:", config);
+    console.log("Query Response:", queryResponse);
 
- /**
-  * UpdateAsync is the function that gets called (potentially) multiple times. It receives
-  * the data and should update the visualization with the new data.
-  **/
-	updateAsync: function(data, element, config, queryResponse, details, doneRendering){
-    // set the dimensions and margins of the graph
-    var margin = {top: 20, right: 20, bottom: 30, left: 40},
-        width = 960 - margin.left - margin.right,
-        height = 500 - margin.top - margin.bottom;
+    try {
+      if (Object(i.b)(this, queryResponse, {
+        min_pivots: 0,
+        max_pivots: 0,
+        min_dimensions: 1,
+        max_dimensions: undefined,
+        min_measures: 1,
+        max_measures: 1
+      })) {
+        var o = element.clientWidth,
+            a = element.clientHeight;
+        console.log("Container size:", o, a);
 
-    // set the ranges
-    var x = d3.scaleBand()
-              .range([0, width])
-              .padding(0.1);
-    var y = d3.scaleLinear()
-              .range([height, 0]);
+        if (o <= 0 || a <= 0) {
+          console.error("Invalid dimensions:", o, a);
+          return;
+        }
 
-    // append the svg object to the body of the page
-    // append a 'group' element to 'svg'
-    // moves the 'group' element to the top left margin
-    element.innerHTML = ""
-    var svg = d3.select("#vis").append("svg")
-        .attr("width", width + margin.left + margin.right)
-        .attr("height", height + margin.top + margin.bottom)
-      .append("g")
-        .attr("transform", 
-              "translate(" + margin.left + "," + margin.top + ")");
-    
-    formattedData = []
+        var c = queryResponse.fields.dimension_like,
+            f = queryResponse.fields.measure_like[0];
 
-    // format the data
-    data.forEach(function(d) {
-      formattedData.push({
-      	count: d["game.count"]["value"],
-        friendly_class: d["game.friendly_class"]["value"],
-        opponent_class: d["game.opponent_class"]["value"]
-      });
-    });
+        if (!c.length || !f) {
+          console.error("Missing required fields:", c, f);
+          return;
+        }
 
-    // Scale the range of the data in the domains
-    x.domain(formattedData.map(function(d) { return d.friendly_class; }));
-    y.domain([0, d3.max(formattedData, function(d) { return d.count; })]);
+        var s = Object(i.a)(f.value_format) || function(t) {
+          return t.toString()
+        };
+        var l = d3.scaleOrdinal().range(config.color_range);
+        console.log("Color scale:", l.range());
 
-    // append the rectangles for the bar chart
-    svg.selectAll(".bar")
-      .data(formattedData)
-      .enter().append("rect")
-      .attr("class", "bar")
-      .attr("style", "fill: #6c43e0;")
-      .attr("x", function(d) { return x(d.friendly_class); })
-      .attr("width", x.bandwidth())
-      .attr("y", function(d) { return y(d.count); })
-      .attr("height", function(d) { return height - y(d.count); });
+        data.forEach(function(t) {
+          t.taxonomy = {
+            value: c.map(function(n) {
+              return t[n.name].value
+            })
+          }
+        });
 
-    // add the x Axis
-    svg.append("g")
-      .attr("transform", "translate(0," + height + ")")
-      .call(d3.axisBottom(x));
+        var h = d3.treemap()
+          .size([o, a - 16])
+          .tile(d3.treemapSquarify.ratio(1))
+          .paddingOuter(1)
+          .paddingTop(function(t) {
+            return 1 === t.depth ? 16 : 0
+          })
+          .paddingInner(1)
+          .round(!0);
 
-    // add the y Axis
-    svg.append("g")
-      .call(d3.axisLeft(y));
+        var d = this.svg.html("").attr("width", "100%").attr("height", "100%")
+          .append("g")
+          .attr("transform", "translate(0,16)");
 
-		doneRendering()
-	}
-};
+        var p = d.append("text").attr("y", -5).attr("x", 4);
 
-looker.plugins.visualizations.add(visObject);
+        var v = d3.hierarchy(function(t) {
+          var n = {};
+          return t.forEach(function(t) {
+            var e = n;
+            t.taxonomy.value.forEach(function(t) {
+              e[t] = t in e ? e[t] : {};
+              e = e[t]
+            });
+            e.__data = t
+          }), {
+            name: "root",
+            children: function t(n, e) {
+              void 0 === e && (e = 0);
+              var r = [];
+              for (var i in n)
+                if ("__data" !== i) {
+                  var u = {
+                    name: i,
+                    depth: e,
+                    children: t(n[i], e + 1)
+                  };
+                  "__data" in n[i] && (u.data = n[i].__data), r.push(u)
+                } return r
+            }(n, 1),
+            depth: 0
+          }
+        }(data)).sum(function(t) {
+          return "data" in t ? t.data[f.name].value : 0
+        });
+
+        console.log("Hierarchy data:", v);
+
+        h(v);
+        console.log("Treemap data:", v.descendants());
+
+        var g = d.selectAll(".node")
+          .data(v.descendants())
+          .enter().append("g")
+          .attr("transform", function(t) {
+            return "translate(" + t.x0 + "," + t.y0 + ")"
+          })
+          .attr("class", function(t, n) {
+            return "node depth-" + t.depth
+          })
+          .style("stroke-width", 1.5)
+          .style("cursor", "pointer")
+          .on("click", function(t) {
+            return console.log(t)
+          })
+          .on("mouseenter", function(t) {
+            var n = t.ancestors();
+            p.text(n.map(function(t) {
+              return t.data.name
+            }).slice(0, -1).reverse().join("-") + ": " + s(t.value));
+            d.selectAll("g.node rect").style("stroke", null).filter(function(t) {
+              return n.indexOf(t) > -1
+            }).style("stroke", "#fff")
+          })
+          .on("mouseleave", function(t) {
+            p.text("");
+            d.selectAll("g.node rect").style("stroke", function(t) {
+              return null
+            })
+          });
+
+        g.append("rect")
+          .attr("id", function(t, n) {
+            return "rect-" + n
+          })
+          .attr("width", function(t) {
+            return t.x1 - t.x0
+          })
+          .attr("height", function(t) {
+            return t.y1 - t.y0
+          })
+          .style("fill", function(t) {
+            if (0 === t.depth) return "none";
+            var n = t.ancestors().map(function(t) {
+              return t.data.name
+            }).slice(-2, -1)[0];
+            var e = [l(n), "#ddd"];
+            return d3.scaleLinear().domain([1, 6.5]).range(e)(t.depth)
+          });
+
+        console.log("Rectangles created");
+
+        g.append("clipPath")
+          .attr("id", function(t, n) {
+            return "clip-" + n
+          })
+          .append("use")
+          .attr("xlink:href", function(t, n) {
+            return "#rect-" + n
+          });
+
+        g.append("text")
+          .style("opacity", function(t) {
+            return 1 === t.depth ? 1 : 0
+          })
+          .attr("clip-path", function(t, n) {
+            return "url(#clip-" + n + ")"
+          })
+          .attr("y", function(t) {
+            return 1 === t.depth ? "13" : "10"
+          })
+          .attr("x", 2)
+          .style("font-family", "Helvetica, Arial, sans-serif")
+          .style("fill", "white")
+          .style("font-size", function(t) {
+            return 1 === t.depth ? "14px" : "10px"
+          })
+          .text(function(t) {
+            return "root" === t.data.name ? "" : t.data.name
+          });
+
+        console.log("Text elements created");
+
+        // Log the attributes of rectangles and text elements
+        g.selectAll("rect").each(function(d) {
+          console.log("Rectangle:", d3.select(this).attr("width"), d3.select(this).attr("height"));
+        });
+
+        g.selectAll("text").each(function(d) {
+          console.log("Text:", d3.select(this).text(), d3.select(this).attr("x"), d3.select(this).attr("y"));
+        });
+
+      }
+    } catch (error) {
+      console.error("Error in update function:", error);
+    }
+  }
+});
