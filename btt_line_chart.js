@@ -2,119 +2,90 @@ looker.plugins.visualizations.add({
   id: "btt_line_chart",
   label: "LCP Comparison Chart",
   options: {
-    color_this_period: {
-      type: "string",
-      label: "This Period Color",
-      default: "#007bff"
-    },
-    color_previous_period: {
-      type: "string",
-      label: "Previous Period Color",
-      default: "#28a745"
+    color_range: {
+      type: "array",
+      label: "Color Range",
+      display: "colors",
+      default: ["#007bff", "#28a745"]
     }
   },
-  
   create: function(element, config) {
-    console.log("Create function called");
-    element.innerHTML = `
-      <style>
-        .lcp-chart {
-          width: 100%;
-          height: 100%;
-        }
-        .error-message {
-          color: red;
-          font-weight: bold;
-        }
-      </style>
-      <div class="lcp-chart"></div>
-      <div class="error-message"></div>
-    `;
-    this.chart = null;
+    element.innerHTML = '<div id="chartContainer" style="width:100%;height:100%;"></div>';
   },
-
   updateAsync: function(data, element, config, queryResponse, details, done) {
-    console.log("UpdateAsync function called");
-    this.clearErrors();
-    
-    const errorMessageElement = element.querySelector('.error-message');
-    errorMessageElement.textContent = '';
-
-    console.log("Data:", JSON.stringify(data, null, 2));
-    console.log("Query Response:", JSON.stringify(queryResponse, null, 2));
-
-    if (data.length === 0) {
-      console.log("No data returned from query");
-      this.addError({title: "No Data", message: "The query returned no results."});
-      errorMessageElement.textContent = "Error: No data returned from query";
+    // Check for errors
+    if (!handleErrors(this, queryResponse, {
+      min_pivots: 0,
+      max_pivots: 0,
+      min_dimensions: 1,
+      max_dimensions: 1,
+      min_measures: 2,
+      max_measures: 2
+    })) {
       return;
     }
 
-    try {
-      console.log("Searching for date dimension");
-      const dateField = queryResponse.fields.dimensions.find(d => d.type === 'date' || d.type === 'datetime')?.name;
-      console.log("Date field found:", dateField);
+    // Get the field names
+    var dimensionName = queryResponse.fields.dimensions[0].name;
+    var measure1Name = queryResponse.fields.measures[0].name;
+    var measure2Name = queryResponse.fields.measures[1].name;
 
-      console.log("Searching for measure");
-      const measureField = queryResponse.fields.measures[0]?.name;
-      console.log("Measure field found:", measureField);
+    // Get the field labels for series names
+    var measure1Label = queryResponse.fields.measures[0].label_short || measure1Name;
+    var measure2Label = queryResponse.fields.measures[1].label_short || measure2Name;
 
-      if (!dateField) {
-        console.log("No date dimension found");
-        this.addError({title: "No Date Dimension", message: "This chart requires a date dimension."});
-        errorMessageElement.textContent = "Error: No date dimension found";
-        return;
-      }
-      if (!measureField) {
-        console.log("No measure found");
-        this.addError({title: "No Measure", message: "This chart requires a measure."});
-        errorMessageElement.textContent = "Error: No measure found";
-        return;
-      }
+    var chartData = data.map(function(row) {
+      return {
+        x: row[dimensionName].value,
+        y1: row[measure1Name].value,
+        y2: row[measure2Name].value
+      };
+    });
 
-      console.log("Transforming data");
-      const chartData = data.map(row => ({
-        date: row[dateField].value,
-        value: row[measureField].value
-      }));
-      console.log("Transformed data:", chartData);
+    // Sort data by x value
+    chartData.sort(function(a, b) {
+      return new Date(a.x) - new Date(b.x);
+    });
 
-      const chartContainer = element.querySelector('.lcp-chart');
+    // Prepare series data
+    var series1Data = chartData.map(function(point) {
+      return [new Date(point.x).getTime(), point.y1];
+    });
 
-      if (this.chart) {
-        console.log("Destroying existing chart");
-        this.chart.destroy();
-      }
+    var series2Data = chartData.map(function(point) {
+      return [new Date(point.x).getTime(), point.y2];
+    });
 
-      console.log("Creating new chart");
-      this.chart = Highcharts.chart(chartContainer, {
+    // Create the chart
+    Highcharts.chart('chartContainer', {
+      chart: {
+        type: 'line'
+      },
+      title: {
+        text: 'Metric Comparison Chart'
+      },
+      xAxis: {
+        type: 'datetime',
         title: {
-          text: 'Data Over Time'
-        },
-        xAxis: {
-          type: 'datetime',
-          title: {
-            text: 'Date'
-          }
-        },
-        yAxis: {
-          title: {
-            text: queryResponse.fields.measures[0].label_short || 'Value'
-          }
-        },
-        series: [{
-          name: measureField,
-          data: chartData.map(d => [new Date(d.date).getTime(), parseFloat(d.value)]),
-          color: config.color_this_period
-        }]
-      });
+          text: 'Date'
+        }
+      },
+      yAxis: {
+        title: {
+          text: 'Value'
+        }
+      },
+      series: [{
+        name: measure1Label,
+        data: series1Data,
+        color: config.color_range[0]
+      }, {
+        name: measure2Label,
+        data: series2Data,
+        color: config.color_range[1]
+      }]
+    });
 
-      console.log("Chart created successfully");
-      done();
-    } catch (error) {
-      console.error("Error in visualization:", error);
-      this.addError({title: "Error", message: "An error occurred while rendering the visualization. Check the console for details."});
-      errorMessageElement.textContent = `Error: ${error.message}`;
-    }
+    done();
   }
 });
